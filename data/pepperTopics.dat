@@ -1,0 +1,4 @@
+#topCamera     /top/image
+topCamera     /naoqi_driver/camera/front/image_raw
+bottomCamera    /naoqi_driver/camera/bottom/image_raw
+depthCamera   /naoqi_driver/camera/depth/image_raw
