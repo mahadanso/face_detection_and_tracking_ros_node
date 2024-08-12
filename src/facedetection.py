@@ -9,6 +9,9 @@ import numpy as np
 from collections import OrderedDict
 from face_detection.msg import FaceDetectionData
 
+# from l2cs import Pipeline, render
+# import cv2, torch
+
 class FaceDetectionNode:
     def __init__(self):
         self.bridge = CvBridge()
@@ -21,7 +24,7 @@ class FaceDetectionNode:
         self.image_sub = rospy.Subscriber('/naoqi_driver/camera/front/image_raw', Image, self.image_callback)
 
         # Create a publisher to publish processed images
-        self.data_pub = rospy.Publisher('/face_detection', FaceDetectionData, queue_size=10)
+        self.data_pub = rospy.Publisher('faceDetection/data', FaceDetectionData, queue_size=10)
 
         # Initialize tracker
         self.next_object_id = 0
@@ -93,6 +96,7 @@ class FaceDetectionNode:
         return np.linalg.norm(a[:, np.newaxis] - b, axis=2)
 
     def image_callback(self, data):
+        # print("callback")
         # Convert ROS Image message to OpenCV image
         cv_image = self.bridge.imgmsg_to_cv2(data, 'bgr8')
 
@@ -106,26 +110,27 @@ class FaceDetectionNode:
         right_eyes = []
         # Draw bounding boxes and facial landmarks
         if boxes is not None:
-            for box, landmark in zip(boxes, landmarks):
-                # Draw the bounding box
-                cv2.rectangle(cv_image,
-                              (int(box[0]), int(box[1])),
-                              (int(box[2]), int(box[3])),
-                              (0, 155, 255),
-                              2)
+            for box, landmark, prob in zip(boxes, landmarks, probs):
+                if prob > 0.5:
+                    # Draw the bounding box
+                    cv2.rectangle(cv_image,
+                                (int(box[0]), int(box[1])),
+                                (int(box[2]), int(box[3])),
+                                (0, 155, 255),
+                                2)
 
-                # Draw the landmarks (eyes)
-                cv2.circle(cv_image, (int(landmark[0][0]), int(landmark[0][1])), 2, (0, 255, 0), 2)
-                cv2.circle(cv_image, (int(landmark[1][0]), int(landmark[1][1])), 2, (0, 255, 0), 2)
+                    # Draw the landmarks (eyes)
+                    cv2.circle(cv_image, (int(landmark[0][0]), int(landmark[0][1])), 2, (0, 255, 0), 2)
+                    cv2.circle(cv_image, (int(landmark[1][0]), int(landmark[1][1])), 2, (0, 255, 0), 2)
 
-                left_eyes.append(int(landmark[0][0]))
-                left_eyes.append(int(landmark[0][1]))
-                right_eyes.append(int(landmark[1][0]))
-                right_eyes.append(int(landmark[1][1]))
+                    left_eyes.append(int(landmark[0][0]))
+                    left_eyes.append(int(landmark[0][1]))
+                    right_eyes.append(int(landmark[1][0]))
+                    right_eyes.append(int(landmark[1][1]))
 
-                # Compute the centroid of the bounding box
-                centroid = (int((box[0] + box[2]) / 2), int((box[1] + box[3]) / 2))
-                input_centroids.append(centroid)
+                    # Compute the centroid of the bounding box
+                    centroid = (int((box[0] + box[2]) / 2), int((box[1] + box[3]) / 2))
+                    input_centroids.append(centroid)
 
         # Update the tracker with the new centroids
         objects = self.update(input_centroids)
@@ -160,8 +165,16 @@ class FaceDetectionNode:
 
 if __name__ == '__main__':
     try:
+        print("Starting face detection node")
         FaceDetectionNode()
+        print("Face detection node started successfully!!")
         rospy.spin()
+        
+        # gaze_pipeline = Pipeline(
+        #     weights='models/L2CSNet_gaze360.pkl',
+        #     arch='ResNet50',
+        #     device=torch.device('cpu') # or 'gpu'
+        # )
     except rospy.ROSInterruptException:
         pass
     finally:
