@@ -45,7 +45,7 @@ class FaceDetectionNode:
         if len(input_centroids) == 0:
             for object_id in list(self.disappeared.keys()):
                 self.disappeared[object_id] += 1
-                if self.disappeared[object_id] > 10:  # Disappeared threshold
+                if self.disappeared[object_id] > 2:  # Disappeared threshold
                     self.deregister(object_id)
             return self.objects
 
@@ -81,7 +81,7 @@ class FaceDetectionNode:
                 for row in unused_rows:
                     object_id = object_ids[row]
                     self.disappeared[object_id] += 1
-                    if self.disappeared[object_id] > 50:
+                    if self.disappeared[object_id] > 2:
                         self.deregister(object_id)
             else:
                 for col in unused_cols:
@@ -102,6 +102,7 @@ class FaceDetectionNode:
 
         # Perform face detection
         boxes, probs, landmarks = self.detector.detect(cv_image, landmarks=True)
+        # print(boxes)
 
         # Prepare centroids for tracking
         input_centroids = []
