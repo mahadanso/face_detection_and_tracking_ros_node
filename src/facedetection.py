@@ -8,11 +8,8 @@ from facenet_pytorch import MTCNN
 import numpy as np
 import mediapipe as mp
 from collections import OrderedDict
-from face_detection.msg import FaceDetectionData
-# from google.colab.patches import cv2_imshow
-
-# from l2cs import Pipeline, render
-# import cv2, torch
+from geometry_msgs.msg import Point
+from face_detection.msg import facePose
 
 class FaceDetectionNode:
     def __init__(self):
@@ -26,21 +23,21 @@ class FaceDetectionNode:
         self.image_sub = rospy.Subscriber('/naoqi_driver/camera/front/image_raw', Image, self.image_callback)
 
         # Create a publisher to publish processed images
-        self.data_pub = rospy.Publisher('faceDetection/data', FaceDetectionData, queue_size=10)
+        self.data_pub = rospy.Publisher('faceDetection/data', facePose, queue_size=10)
 
         # Initialize face mesh
         self.mp_face_mesh = mp.solutions.face_mesh
-        self.face_mesh = self.mp_face_mesh.FaceMesh(min_detection_confidence=0.5,min_tracking_confidence=0.5)
+        self.face_mesh = self.mp_face_mesh.FaceMesh(max_num_faces=10, min_detection_confidence=0.5,min_tracking_confidence=0.5)
 
         self.mp_drawing = mp.solutions.drawing_utils
 
-        self.drawing_spec = self.mp_drawing.DrawingSpec(color=(128,0,128),thickness=2,circle_radius=1)
+        self.drawing_spec = self.mp_drawing.DrawingSpec(color=(128,128,128),thickness=1,circle_radius=1)
 
         # Initialize tracker
         self.next_object_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
-        self.face_detection_data_msg = FaceDetectionData()
+        self.face_detection_data_msg = facePose()
 
     def register(self, centroid):
         self.objects[self.next_object_id] = centroid
@@ -55,7 +52,7 @@ class FaceDetectionNode:
         if len(input_centroids) == 0:
             for object_id in list(self.disappeared.keys()):
                 self.disappeared[object_id] += 1
-                if self.disappeared[object_id] > 2:  # Disappeared threshold
+                if self.disappeared[object_id] > 0:  # Disappeared threshold
                     self.deregister(object_id)
             return self.objects
 
@@ -91,7 +88,7 @@ class FaceDetectionNode:
                 for row in unused_rows:
                     object_id = object_ids[row]
                     self.disappeared[object_id] += 1
-                    if self.disappeared[object_id] > 2:
+                    if self.disappeared[object_id] > 0:
                         self.deregister(object_id)
             else:
                 for col in unused_cols:
@@ -120,11 +117,14 @@ class FaceDetectionNode:
         image = cv2.cvtColor(image,cv2.COLOR_RGB2BGR)
 
         img_h , img_w, img_c = image.shape
-        face_2d = []
-        face_3d = []
+        
+        mutualGaze_list = []
 
         if results.multi_face_landmarks:
-            for face_landmarks in results.multi_face_landmarks:
+            for face_id, face_landmarks in enumerate(results.multi_face_landmarks):
+                # Initialize face_2d and face_3d as lists for each detected face
+                face_2d = []
+                face_3d = []
                 for idx, lm in enumerate(face_landmarks.landmark):
                     if idx == 33 or idx == 263 or idx ==1 or idx == 61 or idx == 291 or idx==199:
                         if idx ==1:
@@ -134,7 +134,6 @@ class FaceDetectionNode:
 
                         face_2d.append([x,y])
                         face_3d.append(([x,y,lm.z]))
-
 
                 #Get 2d Coord
                 face_2d = np.array(face_2d,dtype=np.float64)
@@ -160,17 +159,13 @@ class FaceDetectionNode:
                 y = angles[1] * 360
                 z = angles[2] * 360
 
-                #here based on axis rot angle is calculated
-                if y < -10:
-                    text="Looking Left"
-                elif y > 10:
-                    text="Looking Right"
-                elif x < -10:
-                    text="Looking Down"
-                elif x > 10:
-                    text="Looking Up"
-                else:
-                    text="Forward"
+                # Determine if head is facing forward
+                mutualGaze = abs(x) <= 5 and abs(y) <= 5
+                mutualGaze_list.append(mutualGaze)
+
+                # Display text (forward or not forward)
+                text = "Forward" if mutualGaze else "Not Forward"
+                label = f"Face {face_id + 1}: {text}"
 
                 nose_3d_projection,jacobian = cv2.projectPoints(nose_3d,rotation_vec,translation_vec,cam_matrix,distortion_matrix)
 
@@ -180,16 +175,12 @@ class FaceDetectionNode:
                 cv2.line(image,p1,p2,(255,0,0),3)
 
                 cv2.putText(image,text,(20,50),cv2.FONT_HERSHEY_SIMPLEX,2,(0,255,0),2)
-                cv2.putText(image,"x: " + str(np.round(x,2)),(500,50),cv2.FONT_HERSHEY_SIMPLEX,1,(0,0,255),2)
-                cv2.putText(image,"y: "+ str(np.round(y,2)),(500,100),cv2.FONT_HERSHEY_SIMPLEX,1,(0,0,255),2)
-                cv2.putText(image,"z: "+ str(np.round(z, 2)), (500, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-
-            self.mp_drawing.draw_landmarks(image=image,
-                                    landmark_list=face_landmarks,
-                                    connections=self.mp_face_mesh.FACEMESH_CONTOURS,
-                                    landmark_drawing_spec=self.drawing_spec,
-                                    connection_drawing_spec=self.drawing_spec)
+                self.mp_drawing.draw_landmarks(image=image,
+                                        landmark_list=face_landmarks,
+                                        connections=self.mp_face_mesh.FACEMESH_CONTOURS,
+                                        landmark_drawing_spec=self.drawing_spec,
+                                        connection_drawing_spec=self.drawing_spec)
 
         cv2.imshow('Head Pose Detection',image)
 
@@ -229,33 +220,23 @@ class FaceDetectionNode:
         objects = self.update(input_centroids)
 
         # Draw the centroids and object IDs
-        labels = []
         centroids = []
-        for (object_id, centroid) in objects.items():
-            labels.append(object_id)
-            centroids.append(centroid[0])
-            centroids.append(centroid[1])
+        for (object_id, c) in objects.items():
+            centroid = Point(x=c[0], y=c[1], z=0)  # z = 0 for 2D image coordinates
+            centroids.append(centroid)
 
             text = f"ID {object_id}"
-            cv2.putText(cv_image, text, (centroid[0] - 10, centroid[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-            cv2.circle(cv_image, (centroid[0], centroid[1]), 4, (0, 255, 0), -1)
+            cv2.putText(cv_image, text, (c[0] - 10, c[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            cv2.circle(cv_image, (c[0], c[1]), 4, (0, 255, 0), -1)
 
         # Display the image with bounding boxes, landmarks, and centroids
         cv2.imshow('Face Detection', cv_image)
         cv2.waitKey(1)
 
-        # Convert OpenCV image back to ROS Image message
-        # processed_image_msg = self.bridge.cv2_to_imgmsg(cv_image, 'bgr8')
-        print("call back end...")
-
-
         # Publish the processed image
-        if len(labels) != 0:
-            self.face_detection_data_msg.face_label = labels
-            self.face_detection_data_msg.face_centroid = centroids
-            self.face_detection_data_msg.left_eye_centroid = left_eyes
-            self.face_detection_data_msg.right_eye_centroid = right_eyes
-            self.data_pub.publish(self.face_detection_data_msg)
+        self.face_detection_data_msg.centroids = centroids
+        self.face_detection_data_msg.mutualGaze = any(p for p in mutualGaze_list)
+        self.data_pub.publish(self.face_detection_data_msg)
 
 if __name__ == '__main__':
     try:
@@ -263,12 +244,6 @@ if __name__ == '__main__':
         FaceDetectionNode()
         print("Face detection node started successfully!!")
         rospy.spin()
-        
-        # gaze_pipeline = Pipeline(
-        #     weights='models/L2CSNet_gaze360.pkl',
-        #     arch='ResNet50',
-        #     device=torch.device('cpu') # or 'gpu'
-        # )
     except rospy.ROSInterruptException:
         pass
     finally:

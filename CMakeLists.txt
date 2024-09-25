@@ -11,21 +11,25 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   sensor_msgs
+  geometry_msgs
   cv_bridge
   message_generation
 )
 
 add_message_files(
-  FILES FaceDetectionData.msg
+  FILES 
+  facePose.msg
 )
 
 generate_messages(
   DEPENDENCIES
   std_msgs
+  sensor_msgs
+  geometry_msgs
 )
 
 catkin_package(
-  CATKIN_DEPENDS rospy std_msgs sensor_msgs cv_bridge
+  CATKIN_DEPENDS rospy std_msgs sensor_msgs cv_bridge geometry_msgs message_runtime
 )
 
 ## System dependencies are found with CMake's conventions
