@@ -195,7 +195,7 @@ class FaceDetectionNode:
         # Draw bounding boxes and facial landmarks
         if boxes is not None:
             for box, landmark, prob in zip(boxes, landmarks, probs):
-                if prob > 0.5:
+                if prob > 0.7:
                     # Draw the bounding box
                     cv2.rectangle(cv_image,
                                 (int(box[0]), int(box[1])),
