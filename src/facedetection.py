@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 import rospy
 from sensor_msgs.msg import Image
@@ -20,7 +20,8 @@ class FaceDetectionNode:
         rospy.init_node('face_detection_node', anonymous=True)
 
         # Subscribe to the /camera topic
-        self.image_sub = rospy.Subscriber('/naoqi_driver/camera/front/image_raw', Image, self.image_callback)
+        # self.image_sub = rospy.Subscriber('/naoqi_driver/camera/front/image_raw', Image, self.image_callback)
+        self.image_sub = rospy.Subscriber('/camera/color/image_raw', Image, self.image_callback)
 
         # Create a publisher to publish processed images
         self.data_pub = rospy.Publisher('faceDetection/data', facePose, queue_size=10)
